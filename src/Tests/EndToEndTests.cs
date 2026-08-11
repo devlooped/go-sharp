@@ -70,6 +70,42 @@ public class EndToEndTests
     }
 
     [Fact]
+    public void Publish_injects_dotnet_host_environment()
+    {
+        var dir = CreateTempDir();
+        var app = Path.Combine(dir, "app.cs");
+        File.WriteAllText(app, """
+            #:property TargetFramework=net10.0
+
+            var host = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+            var root = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+            Console.WriteLine($"HOST:{host}");
+            Console.WriteLine($"ROOT:{root}");
+            Console.WriteLine($"HOST_EXISTS:{(host is not null && File.Exists(host)).ToString().ToLowerInvariant()}");
+            """);
+
+        try
+        {
+            RunGo("clean", app);
+
+            // AOT path is where RuntimeEnvironment-based muxer discovery fails; env injection must work here.
+            var (exit, output) = RunGo(app);
+            Assert.Equal(0, exit);
+            Assert.Contains("HOST_EXISTS:true", output);
+            Assert.Contains("HOST:", output);
+            Assert.Contains("ROOT:", output);
+
+            Assert.NotNull(DotnetMuxer.Path);
+            Assert.Contains("HOST:" + DotnetMuxer.Path.FullName, output, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("ROOT:" + Path.GetDirectoryName(DotnetMuxer.Path.FullName), output, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            CleanApp(app);
+        }
+    }
+
+    [Fact]
     public void Publish_r2r_second_run_hits_cache()
     {
         var marker = "e2e-" + Guid.NewGuid().ToString("N");
