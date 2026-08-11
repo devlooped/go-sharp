@@ -62,6 +62,10 @@ public static class ProcessRunner
                 startInfo.ArgumentList.Add(arg);
         }
 
+        // Always expose the muxer go resolved so apps can re-invoke `dotnet` (incl. native AOT).
+        foreach (var (key, value) in CreateDotNetHostEnvironment())
+            startInfo.Environment[key] = value;
+
         if (environment is not null)
         {
             foreach (var (key, value) in environment)
@@ -74,6 +78,28 @@ public static class ProcessRunner
         await process.WaitForExitAsync();
 
         return process.ExitCode;
+    }
+
+    /// <summary>
+    /// Environment entries that point child processes at the same <c>dotnet</c> host go uses.
+    /// Sets <c>DOTNET_HOST_PATH</c> and <c>DOTNET_ROOT</c> when a muxer path is available.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> CreateDotNetHostEnvironment(string? muxerPath = null)
+    {
+        muxerPath ??= DotnetMuxer.Path?.FullName;
+        if (string.IsNullOrEmpty(muxerPath))
+            return new Dictionary<string, string>();
+
+        var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["DOTNET_HOST_PATH"] = muxerPath,
+        };
+
+        var root = Path.GetDirectoryName(muxerPath);
+        if (!string.IsNullOrEmpty(root))
+            env["DOTNET_ROOT"] = root;
+
+        return env;
     }
 
     static Dictionary<string, string> CreateGoEnvironment(string config, string targets) => new()
